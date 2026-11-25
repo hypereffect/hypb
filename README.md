@@ -124,36 +124,3 @@ hypb run hyperb://example.com/app script.js
 hypb run ~/apps/counter.wasm -e 'press("inc"); sleep(500); print(signal("count"))'
 echo 'printTree()' | hypb run hyperb://example.com/app
 ```
-
-## Building
-
-`hypb` depends on `hyperb-core`, which lives in the
-[hyperb](https://github.com/hypereffect/hyperb) repository. A checkout of
-`hyperb` is expected next to this repository:
-
-```text
-code/
-├── hyperb/   # hyperb and its crates, including hyperb-core
-└── hypb/     # this repository
-```
-
-Then:
-
-```sh
-cargo build --release
-cargo run -- --help
-```
-
-The binary is `target/release/hypb`; `cargo install --path .` puts it on your
-`PATH`, and the sibling checkout is still needed to build it.
-
-## Exit status
-
-0 on success; 1 on errors (connection failures, invalid addresses, scripts that
-throw); 2 on bad usage.
-
-## Limitations
-
-- Building from source needs the sibling `hyperb` checkout, so `hypb` cannot be
-  installed from a crates.io package or with a plain `cargo install`.
-- `hypb ui` needs a terminal; `hypb state` prints the same page without one.
