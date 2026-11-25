@@ -1,0 +1,21 @@
+[package]
+name = "hypb"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Scripts and inspects hypereffect apps from the command line"
+readme = "README.md"
+
+[[bin]]
+name = "hypb"
+path = "src/main.rs"
+
+[dependencies]
+# Expects a hyperb checkout next to this repository. Change the path if your
+# layout differs.
+hyperb-core = { path = "../hyperb/crates/core", features = ["net", "iroh", "wasm"] }
+boa_engine = "0.22"
+clap = { version = "4.6", features = ["derive"] }
+ratatui = "0.30"
+unicode-width = "0.2"
+url = "2"

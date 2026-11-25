@@ -1,0 +1,76 @@
+name: Build hypb
+
+# Builds hypb for Linux, macOS and Windows and attaches the archives to the
+# GitHub release. Runs on "v<version>" tags.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, name: linux-x64, exe: "" }
+          - { os: macos-latest, name: macos-arm64, exe: "" }
+          - { os: windows-latest, name: windows-x64, exe: ".exe" }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        # hypb depends on ../hyperb/crates/core, so both checkouts are siblings.
+        working-directory: hypb
+        shell: bash
+    steps:
+      - name: Check out hypb
+        uses: actions/checkout@v4
+        with:
+          path: hypb
+
+      - name: Check out hyperb for hyperb-core
+        uses: actions/checkout@v4
+        with:
+          repository: hypereffect/hyperb
+          path: hyperb
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: hypb
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION=dev
+          fi
+          base="hypb-${{ matrix.name }}-v${VERSION}"
+          mkdir -p dist "$base"
+          cp "target/release/hypb${{ matrix.exe }}" "$base/"
+          if [ "${{ matrix.exe }}" = .exe ]; then
+            7z a "dist/${base}.zip" "$base"
+          else
+            tar czf "dist/${base}.tar.gz" "$base"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hypb-${{ matrix.name }}
+          path: hypb/dist/
+
+      - name: Attach to the release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: hypb/dist/*
