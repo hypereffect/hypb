@@ -1,7 +1,6 @@
-name: Build hypb
-
-# Builds hypb for Linux, macOS and Windows and attaches the archives to the
-# GitHub release. Runs on "v<version>" tags.
+# Builds hypb for every platform on `v*` tags and publishes the binaries as a
+# GitHub release. Run it by hand (workflow_dispatch) to only build them.
+name: release
 
 on:
   push:
@@ -13,64 +12,77 @@ permissions:
 
 jobs:
   build:
+    name: build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest, name: linux-x64, exe: "" }
-          - { os: macos-latest, name: macos-arm64, exe: "" }
-          - { os: windows-latest, name: windows-x64, exe: ".exe" }
-    runs-on: ${{ matrix.os }}
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-22.04 }
+          - { target: aarch64-unknown-linux-gnu, os: ubuntu-22.04-arm }
+          - { target: x86_64-apple-darwin, os: macos-15-intel }
+          - { target: aarch64-apple-darwin, os: macos-15 }
+          - { target: x86_64-pc-windows-msvc, os: windows-latest }
+          - { target: aarch64-pc-windows-msvc, os: windows-11-arm }
     defaults:
       run:
         # hypb depends on ../hyperb/crates/core, so both checkouts are siblings.
         working-directory: hypb
-        shell: bash
     steps:
       - name: Check out hypb
         uses: actions/checkout@v4
         with:
           path: hypb
-
       - name: Check out hyperb for hyperb-core
         uses: actions/checkout@v4
         with:
           repository: hypereffect/hyperb
           path: hyperb
-
       - uses: dtolnay/rust-toolchain@stable
-
+        with:
+          targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: hypb
-
-      - name: Build
-        run: cargo build --release --locked
-
-      - name: Package
+          key: ${{ matrix.target }}
+      - name: build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: package
+        shell: bash
         run: |
-          set -euo pipefail
-          if [ "${GITHUB_REF_TYPE}" = tag ]; then
-            VERSION="${GITHUB_REF_NAME#v}"
+          name="hypb-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          [ "$GITHUB_REF_TYPE" = tag ] || name="hypb-${GITHUB_SHA::7}-${{ matrix.target }}"
+          mkdir "$name"
+          cp README.md "$name/"
+          if [[ "${{ matrix.target }}" == *windows* ]]; then
+            cp "target/${{ matrix.target }}/release/hypb.exe" "$name/"
+            7z a "$name.zip" "$name" > /dev/null
+            echo "ASSET=$name.zip" >> "$GITHUB_ENV"
           else
-            VERSION=dev
+            cp "target/${{ matrix.target }}/release/hypb" "$name/"
+            tar czf "$name.tar.gz" "$name"
+            echo "ASSET=$name.tar.gz" >> "$GITHUB_ENV"
           fi
-          base="hypb-${{ matrix.name }}-v${VERSION}"
-          mkdir -p dist "$base"
-          cp "target/release/hypb${{ matrix.exe }}" "$base/"
-          if [ "${{ matrix.exe }}" = .exe ]; then
-            7z a "dist/${base}.zip" "$base"
-          else
-            tar czf "dist/${base}.tar.gz" "$base"
-          fi
-
       - uses: actions/upload-artifact@v4
         with:
-          name: hypb-${{ matrix.name }}
-          path: hypb/dist/
+          name: ${{ matrix.target }}
+          path: hypb/${{ env.ASSET }}
 
-      - name: Attach to the release
-        if: github.ref_type == 'tag'
-        uses: softprops/action-gh-release@v2
+  release:
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
         with:
-          files: hypb/dist/*
+          path: dist
+          merge-multiple: true
+      - name: checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
